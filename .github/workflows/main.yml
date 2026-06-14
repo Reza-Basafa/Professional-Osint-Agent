@@ -29,7 +29,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4 phone-iso3166 phonenumbers
         git clone https://github.com/sherlock-project/sherlock.git
-        cd sherlock && python -m pip install -r requirements.txt
+        python -m pip install -r ./sherlock/requirements.txt
 
     - name: Execute Cyber Forensic & OSINT Core
       run: |
