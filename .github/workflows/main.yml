@@ -28,16 +28,13 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4 phone-iso3166 phonenumbers
-        
-        # دانلود و راه‌اندازی ابزار افسانه‌ای Sherlock برای ردگیری آیدی‌ها
         git clone https://github.com/sherlock-project/sherlock.git
-        cd sherlock && pip install -r requirements.txt
+        cd sherlock && python -m pip install -r requirements.txt
 
     - name: Execute Cyber Forensic & OSINT Core
       run: |
         mkdir -p outputs
         
-        # ساخت اسکریپت داینامیک پایتون برای تحلیل عمیق اهداف
         cat << 'EOF' > forensic_runner.py
         import sys
         import json
@@ -53,7 +50,6 @@ jobs:
         report.append(f"📡 NEXUS CYBER FORENSIC OVERWATCH | TARGET: {tval}")
         report.append("="*60 + "\n")
 
-        # --- ماژول آنالیز پیشرفته شماره تلفن ---
         if ttype == "phone":
             report.append("[▶] Running Phone Forensic Module...")
             try:
@@ -68,11 +64,9 @@ jobs:
             except Exception as e:
                 report.append(f"[-] Phone Analysis Crash: {str(e)}")
 
-        # --- ماژول کالبدشکافی ایمیل و بررسی نشت داده ---
         elif ttype == "email":
             report.append("[▶] Running Email Intelligence & Breach Module...")
             try:
-                # گام اول: اعتبار سنجی ساختار سرور ایمیل
                 res = requests.get(f"https://api.eva.pingutil.com/email?email={tval}", timeout=10)
                 if res.status_code == 200:
                     data = res.json().get('data', {})
@@ -81,7 +75,6 @@ jobs:
                     report.append(f"[+] Valid Syntax Structure: {data.get('valid_syntax')}")
                     report.append(f"[+] Spam / Catch-All Check: {data.get('spam')}")
                 
-                # گام دوم: بررسی نشت اطلاعات در هک‌های عمومی (شبیه‌سازی هک)
                 report.append("\n[*] Checking Public Data Leaks (OSINT Breaches)...")
                 breach_res = requests.get(f"https://leakcheck.io/api/public?check={tval}", timeout=10)
                 if breach_res.status_code == 200:
@@ -96,20 +89,16 @@ jobs:
             except Exception as e:
                 report.append(f"[-] Intelligence Engine Error: {str(e)}")
 
-        # --- ماژول استخراج متادیتای فایلهای مشکوک ---
         elif ttype == "metadata":
             report.append("[▶] Running Digital Metadata Forensic Module...")
             report.append("[+] Ready for File Analysis.")
 
-        # ذخیره‌سازی گزارش نهایی در فایل متنی
         with open("outputs/forensic_investigation_report.txt", "w", encoding="utf-8") as f:
             f.write("\n".join(report))
         EOF
 
-        # اجرای لایه پردازش پایتون
         python forensic_runner.py
 
-        # اگر هدف یوزرنیم بود، ابزار شرلاک را به صورت موازی استارت بزن
         if [ "${{ github.event.inputs.target_type }}" = "username" ]; then
           echo "[🔎] Deploying Sherlock Counter-Intelligence Drone..."
           python sherlock/sherlock --output outputs/sherlock_social_profiles.txt "${{ github.event.inputs.target_value }}"
