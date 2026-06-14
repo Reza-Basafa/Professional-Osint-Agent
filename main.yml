@@ -1,0 +1,127 @@
+name: Ultimate Cloud Forensic Core
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_type:
+        description: 'Type: username / phone / email / metadata'
+        required: true
+        default: 'username'
+      target_value:
+        description: 'The Target (ID, Phone with +, Email, or URL)'
+        required: true
+
+jobs:
+  investigate:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python Environment
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Premium Forensic Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests beautifulsoup4 phone-iso3166 phonenumbers
+        
+        # دانلود و راه‌اندازی ابزار افسانه‌ای Sherlock برای ردگیری آیدی‌ها
+        git clone https://github.com/sherlock-project/sherlock.git
+        cd sherlock && pip install -r requirements.txt
+
+    - name: Execute Cyber Forensic & OSINT Core
+      run: |
+        mkdir -p outputs
+        
+        # ساخت اسکریپت داینامیک پایتون برای تحلیل عمیق اهداف
+        cat << 'EOF' > forensic_runner.py
+        import sys
+        import json
+        import requests
+        import phonenumbers
+        from phonenumbers import carrier, geocoder
+
+        ttype = "${{ github.event.inputs.target_type }}"
+        tval = "${{ github.event.inputs.target_value }}"
+        report = []
+
+        report.append("="*60)
+        report.append(f"📡 NEXUS CYBER FORENSIC OVERWATCH | TARGET: {tval}")
+        report.append("="*60 + "\n")
+
+        # --- ماژول آنالیز پیشرفته شماره تلفن ---
+        if ttype == "phone":
+            report.append("[▶] Running Phone Forensic Module...")
+            try:
+                parsed = phonenumbers.parse(tval, None)
+                valid = phonenumbers.is_valid_number(parsed)
+                report.append(f"[+] Structure Status: {'VALID' if valid else 'INVALID'}")
+                if valid:
+                    report.append(f"[+] Country Geo-Location: {geocoder.description_for_number(parsed, 'en')}")
+                    report.append(f"[+] Mobile Carrier / Operator: {carrier.name_for_number(parsed, 'en')}")
+                    report.append(f"[+] International Format: {phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)}")
+                    report.append(f"[+] E164 Standard Format: {phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)}")
+            except Exception as e:
+                report.append(f"[-] Phone Analysis Crash: {str(e)}")
+
+        # --- ماژول کالبدشکافی ایمیل و بررسی نشت داده ---
+        elif ttype == "email":
+            report.append("[▶] Running Email Intelligence & Breach Module...")
+            try:
+                # گام اول: اعتبار سنجی ساختار سرور ایمیل
+                res = requests.get(f"https://api.eva.pingutil.com/email?email={tval}", timeout=10)
+                if res.status_code == 200:
+                    data = res.json().get('data', {})
+                    report.append(f"[+] Deliverable Status: {data.get('deliverable')}")
+                    report.append(f"[+] Temporary / Disposable Email: {data.get('disposable')}")
+                    report.append(f"[+] Valid Syntax Structure: {data.get('valid_syntax')}")
+                    report.append(f"[+] Spam / Catch-All Check: {data.get('spam')}")
+                
+                # گام دوم: بررسی نشت اطلاعات در هک‌های عمومی (شبیه‌سازی هک)
+                report.append("\n[*] Checking Public Data Leaks (OSINT Breaches)...")
+                breach_res = requests.get(f"https://leakcheck.io/api/public?check={tval}", timeout=10)
+                if breach_res.status_code == 200:
+                    b_data = breach_res.json()
+                    if b_data.get('success') and b_data.get('sources'):
+                        report.append(f"[🚨] WARNING: Email leaked in {b_data.get('total')} major databases!")
+                        report.append("[!] Leaked Sources identified:")
+                        for src in b_data.get('sources'):
+                            report.append(f"   [-] Source: {src.get('name')} | Leak Date: {src.get('date')}")
+                    else:
+                        report.append("[✅] Clean Record: No public data leaks detected for this email.")
+            except Exception as e:
+                report.append(f"[-] Intelligence Engine Error: {str(e)}")
+
+        # --- ماژول استخراج متادیتای فایلهای مشکوک ---
+        elif ttype == "metadata":
+            report.append("[▶] Running Digital Metadata Forensic Module...")
+            report.append("[+] Ready for File Analysis.")
+
+        # ذخیره‌سازی گزارش نهایی در فایل متنی
+        with open("outputs/forensic_investigation_report.txt", "w", encoding="utf-8") as f:
+            f.write("\n".join(report))
+        EOF
+
+        # اجرای لایه پردازش پایتون
+        python forensic_runner.py
+
+        # اگر هدف یوزرنیم بود، ابزار شرلاک را به صورت موازی استارت بزن
+        if [ "${{ github.event.inputs.target_type }}" = "username" ]; then
+          echo "[🔎] Deploying Sherlock Counter-Intelligence Drone..."
+          python sherlock/sherlock --output outputs/sherlock_social_profiles.txt "${{ github.event.inputs.target_value }}"
+        fi
+
+    - name: Pack and Compress Secured Evidence
+      run: |
+        cd outputs
+        zip -r ../cyber_evidence_package.zip ./*
+
+    - name: Archive Forensic Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: forensic-evidence
+        path: cyber_evidence_package.zip
