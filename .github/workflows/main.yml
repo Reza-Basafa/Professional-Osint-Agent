@@ -28,7 +28,6 @@ jobs:
     - name: Install Premium Forensic Dependencies
       run: |
         python -m pip install --upgrade pip
-        # نصب فریم‌ورک‌های پردازش سند و کتابخانه محاسبات ریاضی هندسی
         pip install requests fpdf2
 
     - name: Live Stream Telemetry & Compile Sovereign PDF
@@ -57,26 +56,24 @@ jobs:
 
         try:
             if target == "ISS":
-                # اتصال به API زنده Open-Notify برای رهگیری موقعیت فعلی ایستگاه فضایی
                 res = requests.get("http://api.open-notify.org/iss-now.json", timeout=10)
                 if res.status_code == 200:
                     position = res.json().get("iss_position", {})
                     sat_lat = float(position.get("latitude", 0))
                     sat_lon = float(position.get("longitude", 0))
                     
-                    # محاسبه فرمول ریاضی هورسین (Haversine) برای سنجش فاصله مستقیم اصفهان تا ایستگاه فضایی روی کره‌زمین
+                    # فرمول هورسین
                     rad_lat1, rad_lon1 = math.radians(isfahan_lat), math.radians(isfahan_lon)
                     rad_lat2, rad_lon2 = math.radians(sat_lat), math.radians(sat_lon)
                     dlat, dlon = rad_lat2 - rad_lat1, rad_lon2 - rad_lon1
                     a = math.sin(dlat/2)**2 + math.cos(rad_lat1) * math.cos(rad_lat2) * math.sin(dlon/2)**2
                     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-                    ground_distance = 6371 * c # فاصله روی سطح زمین به کیلومتر
+                    ground_distance = 6371 * c
                     
-                    # محاسبه فاصله فضایی واقعی (وتر مثلث با احتساب ارتفاع ۴۲۰ کیلومتری ماهواره)
                     space_distance = math.sqrt(ground_distance**2 + 420**2)
                     distance_str = f"{space_distance:.2f} KM"
-                    sat_lat = f"{sat_lat:.4f}°"
-                    sat_lon = f"{sat_lon:.4f}°"
+                    sat_lat = f"{sat_lat:.4f} N" if float(position.get("latitude", 0)) >= 0 else f"{abs(sat_lat):.4f} S"
+                    sat_lon = f"{sat_lon:.4f} E" if float(position.get("longitude", 0)) >= 0 else f"{abs(sat_lon):.4f} W"
                     altitude = "421.4 KM (Live)"
                     velocity = "27,564 KM/H (Live)"
         except Exception as e:
@@ -85,11 +82,9 @@ jobs:
         # --- بخش دوم: ساخت موتور رندر گرافیکی PDF محرمانه ---
         class UltraSatReport(FPDF):
             def header(self):
-                # پس‌زمینه مشکی عمیق نظامی
                 self.set_fill_color(10, 12, 18)
                 self.rect(0, 0, 210, 297, "F")
                 
-                # خط‌کشی و هدر هکری
                 self.set_draw_color(0, 255, 102)
                 self.set_line_width(1.0)
                 self.rect(10, 10, 190, 38)
@@ -97,7 +92,8 @@ jobs:
                 self.set_xy(15, 14)
                 self.set_font("Courier", "B", 18)
                 self.set_text_color(0, 255, 102)
-                self.cell(0, 10, "⚡ NEXUS GLOBAL RECONNAISSANCE ARRAY", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                # حذف اموجی رعد و برق برای رفع خطای یونیکد
+                self.cell(0, 10, "// NEXUS GLOBAL RECONNAISSANCE ARRAY", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
                 
                 self.set_font("Courier", "I", 9)
                 self.set_text_color(140, 150, 170)
@@ -115,7 +111,6 @@ jobs:
         pdf.add_page()
         pdf.ln(22)
 
-        # جدول اطلاعات هدر (Metadata Metadata)
         pdf.set_font("Courier", "B", 10)
         pdf.set_text_color(240, 240, 245)
         pdf.cell(100, 8, f"CORE TARGET:    {target} MATRIX", new_x=XPos.RIGHT, new_y=YPos.TOP)
@@ -137,9 +132,10 @@ jobs:
         pdf.set_font("Courier", size=10)
         pdf.set_text_color(200, 200, 210)
         pdf.cell(95, 8, f"[+] Satellite Current Latitude:  {sat_lat}")
-        pdf.cell(95, 8, f"[+] Satellite Current Longitude: {sat_lon}", ln=1)
-        pdf.set_text_color(255, 179, 102) # رنگ نارنجی برای فاکتور فاصله
-        pdf.cell(0, 8, f"[🚨] ABSOLUTE DISTANCE TO ISFAHAN ANTENNA: {distance_str}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(95, 8, f"[+] Satellite Current Longitude: {sat_lon}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_text_color(255, 179, 102)
+        # حذف اموجی آژیر برای رفع خطای یونیکد
+        pdf.cell(0, 8, f"[CRITICAL] ABSOLUTE DISTANCE TO ISFAHAN ANTENNA: {distance_str}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(4)
 
         # ۲. جدول مشخصات فنی تلمتری
@@ -171,9 +167,9 @@ jobs:
 
         pdf.ln(8)
         
-        # ۳. باکس هشدار رادیویی سایبرپنک
+        # ۳. باکس هشدار رادیویی
         pdf.set_fill_color(243, 139, 168)
-        self_text_color = pdf.set_text_color(10, 12, 18)
+        pdf.set_text_color(10, 12, 18)
         pdf.set_font("Courier", "B", 10)
         pdf.cell(0, 8, " [!] SIGINT / LOGISTICAL INTERCEPTION ADVISORY", fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         
