@@ -27,9 +27,11 @@ jobs:
     - name: Install Premium Forensic Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests beautifulsoup4 phone-iso3166 phonenumbers
+        # نصب مستقیم تمام پکیج‌های پایه و نیازمندی‌های اختصاصی شرلاک به صورت یکجا
+        pip install requests beautifulsoup4 phone-iso3166 phonenumbers certifi colorama openpyxl torrequest SOCKSAnonymipy tldextract
+        
+        # کلون کردن پروژه شرلاک فقط برای استفاده از سورس کدهای آن
         git clone https://github.com/sherlock-project/sherlock.git
-        cd sherlock && python -m pip install -r requirements.txt
 
     - name: Execute Cyber Forensic & OSINT Core
       run: |
@@ -101,7 +103,8 @@ jobs:
 
         if [ "${{ github.event.inputs.target_type }}" = "username" ]; then
           echo "[🔎] Deploying Sherlock Counter-Intelligence Drone..."
-          python sherlock/sherlock --output outputs/sherlock_social_profiles.txt "${{ github.event.inputs.target_value }}"
+          # اجرای مستقیم اسکریپت اصلی شرلاک بدون واسطه
+          python ./sherlock/sherlock/sherlock.py --output outputs/sherlock_social_profiles.txt "${{ github.event.inputs.target_value }}"
         fi
 
     - name: Pack and Compress Secured Evidence
