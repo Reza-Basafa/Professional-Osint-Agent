@@ -27,10 +27,7 @@ jobs:
     - name: Install Premium Forensic Dependencies
       run: |
         python -m pip install --upgrade pip
-        # نصب پکیج‌های پایدار و بدون ارور شبکه
         pip install requests beautifulsoup4 phone-iso3166 phonenumbers certifi colorama openpyxl tldextract
-        
-        # کلون کردن شرلاک
         git clone https://github.com/sherlock-project/sherlock.git
 
     - name: Execute Cyber Forensic & OSINT Core
@@ -45,15 +42,24 @@ jobs:
         from phonenumbers import carrier, geocoder
 
         ttype = "${{ github.event.inputs.target_type }}"
-        tval = "${{ github.event.inputs.target_value }}"
+        tval = "${{ github.event.inputs.target_value }}".strip()
         report = []
 
         report.append("="*60)
         report.append(f"📡 NEXUS CYBER FORENSIC OVERWATCH | TARGET: {tval}")
         report.append("="*60 + "\n")
 
+        # --- ماژول آنالیز پیشرفته شماره تلفن ---
         if ttype == "phone":
             report.append("[▶] Running Phone Forensic Module...")
+            
+            # هوشمندسازی: اگر کاربر شماره را با 09 شروع کرد، خودکار تبدیل به +98 کن
+            if tval.startswith("09") and len(tval) == 11:
+                tval = "+98" + tval[1:]
+                report.append(f"[i] Local number detected. Autoconverted to international: {tval}")
+            elif tval.startswith("9") and len(tval) == 10:
+                tval = "+98" + tval
+
             try:
                 parsed = phonenumbers.parse(tval, None)
                 valid = phonenumbers.is_valid_number(parsed)
@@ -63,9 +69,12 @@ jobs:
                     report.append(f"[+] Mobile Carrier / Operator: {carrier.name_for_number(parsed, 'en')}")
                     report.append(f"[+] International Format: {phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)}")
                     report.append(f"[+] E164 Standard Format: {phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)}")
+                else:
+                    report.append("[-] Details: Number has an invalid structural pattern for global routing.")
             except Exception as e:
                 report.append(f"[-] Phone Analysis Crash: {str(e)}")
 
+        # --- ماژول کالبدشکافی ایمیل و بررسی نشت داده ---
         elif ttype == "email":
             report.append("[▶] Running Email Intelligence & Breach Module...")
             try:
@@ -103,7 +112,6 @@ jobs:
 
         if [ "${{ github.event.inputs.target_type }}" = "username" ]; then
           echo "[🔎] Deploying Sherlock Counter-Intelligence Drone..."
-          # اجرای اسکریپت با دور زدن سیستم پروکسی شرلاک برای پایداری ۱۰۰ درصدی روی کلود
           python ./sherlock/sherlock/sherlock.py --no-check-proxies --output outputs/sherlock_social_profiles.txt "${{ github.event.inputs.target_value }}"
         fi
 
