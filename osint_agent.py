@@ -49,7 +49,10 @@ def urlcheck(raw):
  except Exception as e: out["notes"].append("HTTP request: "+type(e).__name__)
  return out
 def username(t):
- if not re.fullmatch(r"[A-Za-z0-9._-]{1,30}",t): raise ValueError("Username must be 1-30 letters, digits, dot, underscore, or hyphen.")
+ # Accept common social-handle notation such as @example, but not full URLs or email addresses.
+ t=t.strip()
+ if t.startswith("@"): t=t[1:]
+ if not re.fullmatch(r"[A-Za-z0-9._-]{1,39}",t): raise ValueError("Enter a username only (1-39 letters, digits, dot, underscore, or hyphen); omit URLs, spaces, and email addresses.")
  rows=[]
  for site,fmt in SITES.items():
   u=fmt.format(t)
