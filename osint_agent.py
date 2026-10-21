@@ -12,7 +12,7 @@ from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Table,TableSty
 UA="NEXUS-OSINT/1.0 (+https://github.com/Reza-Basafa/Professional-Osint-Agent)"
 S=requests.Session(); S.headers.update({"User-Agent":UA})
 SITES={"GitHub":"https://github.com/{}/","GitLab":"https://gitlab.com/{}/","Reddit":"https://www.reddit.com/user/{}/","Medium":"https://medium.com/@{}","Twitch":"https://www.twitch.tv/{}","YouTube":"https://www.youtube.com/@{}","Pinterest":"https://www.pinterest.com/{}/","Instagram":"https://www.instagram.com/{}/","TikTok":"https://www.tiktok.com/@{}","X":"https://x.com/{}"}
-def now(): return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
+def now(): return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
 def clean(t):
  t=t.strip()
  if not t or len(t)>253 or any(ord(c)<32 for c in t): raise ValueError("Invalid target length or control characters.")
