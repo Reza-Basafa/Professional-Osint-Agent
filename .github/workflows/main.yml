@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 8
     steps:
       - name: Require authorization confirmation
-        if: \${{ inputs.authorized_scope != true }}
+        if: ${{ inputs.authorized_scope != true }}
         run: |
           echo "::error::Confirm authorization to investigate this target."
           exit 1
@@ -43,8 +43,8 @@ jobs:
           pip install -r requirements.txt
       - name: Run public-source OSINT
         env:
-          TARGET_TYPE: \${{ inputs.target_type }}
-          TARGET_VALUE: \${{ inputs.target_value }}
+          TARGET_TYPE: ${{ inputs.target_type }}
+          TARGET_VALUE: ${{ inputs.target_value }}
         run: |
           set -euo pipefail
           mkdir -p reports
@@ -53,7 +53,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nexus-osint-report-\${{ github.run_number }}
+          name: nexus-osint-report-${{ github.run_number }}
           path: reports/
           if-no-files-found: warn
           retention-days: 14
