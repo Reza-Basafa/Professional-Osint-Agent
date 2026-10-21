@@ -1,257 +1,59 @@
-name: SAT-TRACK OSINT ULTRA OVERWATCH
+name: NEXUS OSINT Report
 
 on:
   workflow_dispatch:
     inputs:
-      satellite_target:
-        description: 'Target Satellite Matrix'
+      target_type:
+        description: "Public-source check type"
         required: true
-        default: 'ISS'
         type: choice
-        options:
-        - 'ISS'
-        - 'TIANGONG'
-      ground_station:
-        description: 'Select Ground Station Sector (Sidebar)'
+        options: [domain, url, username, email, phone]
+      target_value:
+        description: "Domain, public URL, username, email, or phone with country code"
         required: true
-        default: 'Isfahan'
-        type: choice
-        options:
-        - 'Isfahan'
-        - 'Tehran'
-        - 'Mashhad'
-        - 'Shiraz'
-        - 'Tabriz'
-        - 'Kerman'
+        type: string
+      authorized_scope:
+        description: "I confirm I have permission to investigate this target"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
 
 jobs:
-  telemetry_live_scan:
+  report:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 8
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-
-    - name: Set up Python Environment
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-
-    - name: Install Premium Forensic Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests fpdf2
-
-    - name: Live Stream Telemetry & Compile Sovereign PDF
-      run: |
-        mkdir -p ${{ github.workspace }}/sat_output
-        
-        cat << 'EOF' > sat_processor.py
-        import sys
-        import datetime
-        import math
-        import requests
-        from fpdf import FPDF
-        from fpdf.enums import XPos, YPos
-
-        target = "${{ github.event.inputs.satellite_target }}"
-        station_choice = "${{ github.event.inputs.ground_station }}"
-        current_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-
-        # دیتابیس ایستگاه‌های زمینی ایران (سایدبار منو)
-        stations = {
-            "Isfahan": {"lat": 32.654, "lon": 51.668, "id": "IFN-RECON-32"},
-            "Tehran": {"lat": 35.689, "lon": 51.389, "id": "THR-RECON-35"},
-            "Mashhad": {"lat": 36.297, "lon": 59.606, "id": "MHD-RECON-36"},
-            "Shiraz": {"lat": 29.591, "lon": 52.583, "id": "SHZ-RECON-29"},
-            "Tabriz": {"lat": 38.096, "lon": 46.274, "id": "TBZ-RECON-38"},
-            "Kerman": {"lat": 30.294, "lon": 57.068, "id": "KMN-RECON-30"}
-        }
-
-        station_data = stations.get(station_choice, stations["Isfahan"])
-        station_lat = station_data["lat"]
-        station_lon = station_data["lon"]
-        station_id = station_data["id"]
-        location_str = f"{station_choice}, IR ({station_lat} N, {station_lon} E)"
-
-        # --- دریافت دیتای زنده فضا ---
-        sat_lat, sat_lon = 0.0, 0.0
-        altitude_val = 420.0 # کیلومتر پیش‌فرض
-        distance_str = "Calculating..."
-        ground_distance = 0.0
-
-        try:
-            if target == "ISS":
-                res = requests.get("http://api.open-notify.org/iss-now.json", timeout=10)
-                if res.status_code == 200:
-                    position = res.json().get("iss_position", {})
-                    sat_lat = float(position.get("latitude", 0))
-                    sat_lon = float(position.get("longitude", 0))
-                    
-                    # فرمول هورسین برای فاصله سطح زمین
-                    rad_lat1, rad_lon1 = math.radians(station_lat), math.radians(station_lon)
-                    rad_lat2, rad_lon2 = math.radians(sat_lat), math.radians(sat_lon)
-                    dlat, dlon = rad_lat2 - rad_lat1, rad_lon2 - rad_lon1
-                    a = math.sin(dlat/2)**2 + math.cos(rad_lat1) * math.cos(rad_lat2) * math.sin(dlon/2)**2
-                    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-                    ground_distance = 6371 * c
-                    
-                    space_distance = math.sqrt(ground_distance**2 + altitude_val**2)
-                    distance_str = f"{space_distance:.2f} KM"
-        except Exception as e:
-            distance_str = "Link Timeout"
-
-        # --- محاسبات فیزیکی و فرکانسی پیشرفته ---
-        # ۱. محاسبه اثر دوپلر فرکانسی (شبیه سازی بر اساس موقعیت طول جغرافیایی نسبی)
-        base_freq = 145800000 # 145.8 MHz
-        speed_of_light = 299792458 # m/s
-        relative_velocity = 7660 * math.cos(math.radians(ground_distance % 90))
-        if sat_lon > station_lon: relative_velocity = -relative_velocity # ماهواره دارد دور می‌شود
-        doppler_shift = (relative_velocity / speed_of_light) * base_freq
-        calculated_freq = (base_freq + doppler_shift) / 1000000
-
-        # ۲. محاسبه زاویه افق (Elevation Angle)
-        # فرمول سنجش خط دید مستقیم رادار
-        r_earth = 6371.0
-        r_sat = r_earth + altitude_val
-        alpha = ground_distance / r_earth
-        elevation = math.degrees(math.atan2(r_sat * math.cos(alpha) - r_earth, r_sat * math.sin(alpha))) if ground_distance > 0 else 90.0
-        elevation = max(-90.0, min(90.0, elevation)) # محدود سازی بین بازه زاویه‌ای
-        
-        los_status = "DIRECT LINE-OF-SIGHT LOCKED" if elevation > 0 else "TARGET BELOW HORIZON (PASSIVE)"
-
-        # --- ساخت ساختار سند اولترا آپدیت شده ---
-        class SovereignReport(FPDF):
-            def header(self):
-                self.set_fill_color(10, 12, 18)
-                self.rect(0, 0, 210, 297, "F")
-                
-                # کادربندی ضخیم نظامی
-                self.set_draw_color(0, 255, 102)
-                self.set_line_width(1.0)
-                self.rect(10, 10, 190, 38)
-                
-                self.set_xy(15, 14)
-                self.set_font("Courier", "B", 16)
-                self.set_text_color(0, 255, 102)
-                self.cell(0, 10, "// NEXUS GLOBAL OSINT ARRAY SYSTEM", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-                
-                self.set_font("Courier", "I", 9)
-                self.set_text_color(140, 150, 170)
-                self.set_x(15)
-                self.cell(0, 5, f"DEEP SCAN VECTOR // SECTOR ID: {station_id}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-            def footer(self):
-                self.set_y(-15)
-                self.set_font("Courier", "B", 8)
-                self.set_text_color(90, 100, 110)
-                self.cell(120, 10, f"DATA INTERCEPT AUDIT: {station_id} // SECRET SOURCE", 0, 0, "L")
-                self.cell(70, 10, f"PAGE {self.page_no()} // SECURE", 0, 0, "R")
-
-        pdf = SovereignReport()
-        pdf.add_page()
-        pdf.ln(22)
-
-        # مشخصات کلی سکتور
-        pdf.set_font("Courier", "B", 10)
-        pdf.set_text_color(240, 240, 245)
-        pdf.cell(100, 7, f"TARGET MATRIX: {target} SCAN", new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.cell(90, 7, f"TIMESTAMP:  {current_time}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.cell(100, 7, f"BASE STATION:  {location_str}", new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.cell(90, 7, f"SECTOR ENVELOPE: {station_id}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        
-        pdf.ln(4)
-        pdf.set_draw_color(0, 255, 102)
-        pdf.set_line_width(0.5)
-        pdf.line(10, 78, 200, 78)
-        pdf.ln(6)
-
-        # بخش ۱: مختصات جغرافیایی ثانیه‌ای
-        pdf.set_font("Courier", "B", 12)
-        pdf.set_text_color(0, 255, 102)
-        pdf.cell(0, 8, "1. LIVE SPATIAL COORDINATES & STATE VECTORS", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        
-        pdf.set_font("Courier", size=10)
-        pdf.set_text_color(200, 200, 210)
-        
-        lat_direction = f"{sat_lat:.4f} N" if sat_lat >= 0 else f"{abs(sat_lat):.4f} S"
-        lon_direction = f"{sat_lon:.4f} E" if sat_lon >= 0 else f"{abs(sat_lon):.4f} W"
-        
-        pdf.cell(95, 7, f"[+] Resolved Satellite Lat:  {lat_direction}")
-        pdf.cell(95, 7, f"[+] Resolved Satellite Lon:  {lon_direction}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        
-        pdf.set_text_color(255, 179, 102)
-        pdf.cell(0, 7, f"[!] CALCULATED VECTOR DISTANCE TO ANTENNA: {distance_str}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.ln(4)
-
-        # بخش ۲: آنالیز فیزیکی فرکانس و رادار (Doppler & LoS)
-        pdf.set_font("Courier", "B", 12)
-        pdf.set_text_color(0, 255, 102)
-        pdf.cell(0, 8, "2. ADVANCED RADIO FREQUENCY & RADAR ANALYSIS", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        
-        pdf.set_font("Courier", size=10)
-        pdf.set_text_color(220, 220, 230)
-        pdf.cell(0, 7, f"[+] Calculated Radar Horizon Elevation: {elevation:.2f} Degrees", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.cell(0, 7, f"[+] Base Tracking Frequency Array:     {base_freq/1000000:.3f} MHz", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        
-        # مانیتور وضعیت شیفت فرکانسی
-        pdf.set_text_color(137, 180, 250)
-        pdf.cell(0, 7, f"[+] Active Doppler Shift Spectrum:     {doppler_shift/1000:.3f} kHz (Relative Axis)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.cell(0, 7, f"[+] Target Adjusted Downlink Stream:   {calculated_freq:.6f} MHz", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.ln(4)
-
-        # بخش ۳: جدول جامع سنجش تلمتری زنده
-        pdf.set_font("Courier", "B", 12)
-        pdf.set_text_color(0, 255, 102)
-        pdf.cell(0, 8, "3. MULTI-NODE LIVE TELEMETRY LOGMATRIX", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-        pdf.set_fill_color(22, 28, 45)
-        pdf.set_text_color(0, 255, 102)
-        pdf.set_font("Courier", "B", 10)
-        pdf.cell(65, 9, " Telemetry Node Pipeline", fill=True)
-        pdf.cell(65, 9, " Current Metric Value", fill=True)
-        pdf.cell(60, 9, " Verification Index", fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-        pdf.set_text_color(220, 225, 235)
-        pdf.set_font("Courier", size=10)
-        
-        metrics = [
-            ("Altitude Trajectory", f"{altitude_val:.2f} KM (Live)", "NOMINAL APOGEE"),
-            ("Speed Vector Vector", "27,564 KM/H (Live)", "STABLE TRACE"),
-            ("Line-of-Sight Matrix", f"{elevation:.1f} Deg Elevation", los_status),
-            ("SIGINT Intercept Target", "Passive Telemetry Base", "DECODING LOCK")
-        ]
-        
-        for m_node, m_val, m_stat in metrics:
-            pdf.cell(65, 8, f" {m_node}")
-            pdf.cell(65, 8, f" {m_val}")
-            pdf.cell(60, 8, f" {m_stat}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-        pdf.ln(6)
-        
-        # بخش ۴: یادداشت قانونی و امنیتی
-        pdf.set_fill_color(243, 139, 168)
-        pdf.set_text_color(10, 12, 18)
-        pdf.set_font("Courier", "B", 10)
-        pdf.cell(0, 8, " [!] SIGINT AUTOMATED RISK & SPECTRUM OBSERVATION NOTE", fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        
-        pdf.set_fill_color(28, 20, 30)
-        pdf.set_text_color(243, 139, 168)
-        alert_msg = (
-            f"Ground station {station_id} has achieved full data encapsulation layer. "
-            f"Calculated Doppler shift variance shows real-time motion matrix relative to {station_choice} sector coordinates. "
-            "Telemetry extraction is completely compliant with civil public broadcast data frameworks."
-        )
-        pdf.multi_cell(0, 6, alert_msg, fill=True)
-
-        pdf.output("${{ github.workspace }}/sat_output/Satellite_OSINT_Report.pdf")
-        print("[+] Elite Super-Report compiled successfully.")
-        EOF
-
-        python sat_processor.py
-
-    - name: Archive Direct PDF Report
-      uses: actions/upload-artifact@v4
-      with:
-        name: satellite-intelligence-pdf
-        path: ${{ github.workspace }}/sat_output/Satellite_OSINT_Report.pdf
+      - name: Require authorization confirmation
+        if: \${{ inputs.authorized_scope != true }}
+        run: |
+          echo "::error::Confirm authorization to investigate this target."
+          exit 1
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run public-source OSINT
+        env:
+          TARGET_TYPE: \${{ inputs.target_type }}
+          TARGET_VALUE: \${{ inputs.target_value }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          python osint_agent.py --type "$TARGET_TYPE" --target "$TARGET_VALUE" --out reports
+      - name: Upload PDF and JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-osint-report-\${{ github.run_number }}
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 14
