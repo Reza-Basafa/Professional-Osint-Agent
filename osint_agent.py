@@ -163,7 +163,7 @@ def main():
  if a.sherlock and a.type!="username": p.error("--sherlock can only be used with --type username")
  t=clean(a.target); stamp=now(); out=Path(a.out); out.mkdir(parents=True,exist_ok=True); data=collect(a.type,t,a.sherlock)
  safe=re.sub(r"[^A-Za-z0-9._-]+","_",t).strip("._-")[:50] or "target"; stem=f"nexus_osint_{a.type}_{safe}"
- payload={"tool":"NEXUS Public-Source OSINT","version":"1.0.0","generated_at_utc":stamp,"target_type":a.type,"target":t,"results":data,"notice":"Authorized public-source research only; findings are not identity verification."}
+ payload={"tool":"NEXUS Public-Source OSINT","version":"1.1.0","generated_at_utc":stamp,"target_type":a.type,"target":t,"results":data,"notice":"Authorized public-source research only; findings are not identity verification."}
  (out/(stem+".json")).write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8"); makepdf(out/(stem+".pdf"),a.type,t,data,stamp)
  print("PDF_REPORT="+str(out/(stem+".pdf"))); print("JSON_REPORT="+str(out/(stem+".json")))
 if __name__=="__main__": main()
