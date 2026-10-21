@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse,datetime as dt,ipaddress,json,re,socket,ssl
+import argparse,datetime as dt,ipaddress,json,re,socket,ssl,subprocess,shutil
 from pathlib import Path
 from urllib.parse import urlparse
 import requests,dns.resolver,phonenumbers
@@ -59,23 +59,64 @@ def username(t):
    rows.append({"platform":site,"url":u,"http_status":c,"assessment":state})
   except Exception as e: rows.append({"platform":site,"url":u,"assessment":"Request error: "+type(e).__name__})
  return {"username":t,"profiles":rows,"note":"URL checks do not prove identity or account ownership."}
+DKIM_SELECTORS=("default","google","selector1","selector2","k1","s1","s2","mail","dkim","smtp","mandrill","everlytickey1","everlytickey2")
+def mail_auth(domain_name):
+ out={"spf":[],"dmarc":[],"dkim_selector_checks":{},"notes":[]}
+ try:
+  txt=[r.to_text().strip('"') for r in dns.resolver.resolve(domain_name,"TXT",lifetime=7)]
+  out["spf"]=[x for x in txt if x.lower().startswith("v=spf1")]
+ except Exception as e: out["notes"].append("SPF/domain TXT lookup: "+type(e).__name__)
+ try:
+  txt=[r.to_text().strip('"') for r in dns.resolver.resolve("_dmarc."+domain_name,"TXT",lifetime=7)]
+  out["dmarc"]=[x for x in txt if x.lower().startswith("v=dmarc1")]
+ except Exception as e: out["notes"].append("DMARC lookup: "+type(e).__name__)
+ for selector in DKIM_SELECTORS:
+  q=selector+"._domainkey."+domain_name
+  try:
+   vals=[r.to_text().strip('"') for r in dns.resolver.resolve(q,"TXT",lifetime=3)]
+   out["dkim_selector_checks"][selector]={"record_found":bool(vals),"records":vals[:3]}
+  except Exception as e:
+   out["dkim_selector_checks"][selector]={"record_found":False,"status":type(e).__name__}
+ out["notes"].append("DKIM checks probe a short list of common selectors only; not finding one does not prove DKIM is absent.")
+ return out
 def email(t):
  if len(t)>254 or not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",t): return {"email":t,"syntax":"Invalid or unsupported","note":"No mailbox or breach-database lookup."}
  d=t.rsplit("@",1)[1].lower(); out={"email":t,"syntax":"Looks valid","domain":d,"mx":[],"note":"Does not confirm mailbox existence; no breach database queried."}
  try: out["mx"]=[str(x.exchange).rstrip(".") for x in dns.resolver.resolve(d,"MX",lifetime=7)]
  except Exception as e: out["mx_status"]="No MX result: "+type(e).__name__
+ out["email_authentication"]=mail_auth(d)
  return out
+def sherlock_check(t):
+ if not shutil.which("sherlock"):
+  return {"enabled":True,"status":"Unavailable","note":"Sherlock CLI is not installed in this environment."}
+ try:
+  r=subprocess.run(["sherlock",t,"--print-found","--no-color","--timeout","8"],capture_output=True,text=True,timeout=150,check=False)
+  raw=(r.stdout or "")+"\n"+(r.stderr or "")
+  found=[]
+  for line in raw.splitlines():
+   if "[+]" in line:
+    m=re.search(r"(https?://\S+)",line)
+    if m: found.append({"service":line.split("[+]",1)[1].split(":",1)[0].strip(),"url":m.group(1).rstrip(".,")})
+  return {"enabled":True,"exit_code":r.returncode,"found_profiles":found[:100],"note":"Sherlock results are candidate public profile matches, not proof that accounts share an owner. Rate limits and false positives are possible.","output_excerpt":raw[-2500:]}
+ except subprocess.TimeoutExpired:
+  return {"enabled":True,"status":"Timed out","note":"Sherlock exceeded its 150-second limit; retry later or use fewer checks."}
+ except Exception as e:
+  return {"enabled":True,"status":"Failed","error":type(e).__name__,"note":"Sherlock did not complete successfully."}
 def phone(t):
  try:
   n=phonenumbers.parse(t,None)
   return {"input":t,"possible":phonenumbers.is_possible_number(n),"valid_numbering_plan":phonenumbers.is_valid_number(n),"international_format":phonenumbers.format_number(n,phonenumbers.PhoneNumberFormat.INTERNATIONAL),"region":geocoder.description_for_number(n,"en") or "Unavailable","carrier_label":carrier.name_for_number(n,"en") or "Unavailable","note":"Numbering-plan metadata only; no GPS or subscriber lookup."}
  except Exception as e: return {"input":t,"error":"Could not parse: "+type(e).__name__,"note":"Use international format with country code."}
-def collect(k,t):
+def collect(k,t,use_sherlock=False):
  if k=="domain":
   if "://" in t or "/" in t or "@" in t: raise ValueError("Domain mode accepts only a domain, e.g. example.com.")
-  return {"DNS":domain(t)}
+  result=domain(t); result["mail_authentication"]=mail_auth(t)
+  return {"DNS and mail authentication":result}
  if k=="url": return {"Website":urlcheck(t)}
- if k=="username": return {"Public profile checks":username(t)}
+ if k=="username":
+  result={"Public profile checks":username(t)}
+  if use_sherlock: result["Sherlock extended checks"]=sherlock_check(t)
+  return result
  if k=="email": return {"Email checks":email(t)}
  if k=="phone": return {"Phone metadata":phone(t)}
  raise ValueError("Unsupported type.")
@@ -118,8 +159,9 @@ def makepdf(path,k,t,data,stamp):
   c.saveState(); c.setFillColor(navy); c.rect(0,0,A4[0],A4[1],fill=1,stroke=0); c.setStrokeColor(green); c.line(17*mm,13*mm,A4[0]-17*mm,13*mm); c.setFont("Helvetica",7); c.setFillColor(muted); c.drawString(17*mm,8*mm,"PUBLIC-SOURCE OSINT • NOT VERIFIED IDENTITY"); c.drawRightString(A4[0]-17*mm,8*mm,"PAGE "+str(d.page)); c.restoreState()
  doc.build(story,onFirstPage=page,onLaterPages=page)
 def main():
- p=argparse.ArgumentParser(); p.add_argument("--type",required=True,choices=("domain","url","username","email","phone")); p.add_argument("--target",required=True); p.add_argument("--out",default="reports"); a=p.parse_args()
- t=clean(a.target); stamp=now(); out=Path(a.out); out.mkdir(parents=True,exist_ok=True); data=collect(a.type,t)
+ p=argparse.ArgumentParser(); p.add_argument("--type",required=True,choices=("domain","url","username","email","phone")); p.add_argument("--target",required=True); p.add_argument("--out",default="reports"); p.add_argument("--sherlock",action="store_true",help="Run the optional Sherlock public-profile check for username targets."); a=p.parse_args()
+ if a.sherlock and a.type!="username": p.error("--sherlock can only be used with --type username")
+ t=clean(a.target); stamp=now(); out=Path(a.out); out.mkdir(parents=True,exist_ok=True); data=collect(a.type,t,a.sherlock)
  safe=re.sub(r"[^A-Za-z0-9._-]+","_",t).strip("._-")[:50] or "target"; stem=f"nexus_osint_{a.type}_{safe}"
  payload={"tool":"NEXUS Public-Source OSINT","version":"1.0.0","generated_at_utc":stamp,"target_type":a.type,"target":t,"results":data,"notice":"Authorized public-source research only; findings are not identity verification."}
  (out/(stem+".json")).write_text(json.dumps(payload,indent=2,ensure_ascii=False),encoding="utf-8"); makepdf(out/(stem+".pdf"),a.type,t,data,stamp)
